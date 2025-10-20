@@ -1,196 +1,3 @@
-<!doctype html>
-<html lang="ja">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>推しの珈琲（オフライン対応）</title>
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png" sizes="192x192">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="theme-color" content="#ffffff">
-<style>
-  :root { --gap:12px; --btn:64px; --font:18px; }
-  html,body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; font-size: var(--font); background:#f7f7f7; }
-  header { position: sticky; top:0; background:#fff; padding:12px; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center; z-index:10;}
-  header h1 { font-size:20px; margin:0; flex:1; }
-  main { display:grid; grid-template-columns: 1.2fr 1fr; gap: var(--gap); padding: var(--gap); }
-  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
-  .panel { background:#fff; border:1px solid #eee; border-radius:10px; padding:var(--gap); }
-  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:var(--gap); }
-  @media (max-width: 800px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-  button.item { height:var(--btn); font-size:18px; border:1px solid #ddd; border-radius:10px; background:#fafafa; white-space:pre-line; }
-  button.item.soldout { opacity:0.4; text-decoration: line-through; }
-  table { width:100%; border-collapse: collapse; }
-  th,td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
-  td.qty { width:130px; }
-  .qtybtn { width:36px; height:36px; border:1px solid #ddd; border-radius:8px; background:#fff; }
-  .muted { color:#888; font-size:14px; }
-  .totals { display:flex; flex-direction:column; gap:6px; margin-top:12px; }
-  .totals .row { display:flex; justify-content:space-between; }
-  .pay { display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; }
-  .pay input { font-size:24px; padding:8px; width:100%; }
-  .keys { display:flex; flex-wrap:wrap; gap:8px; }
-  .keys button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; background:#fff; }
-  .actions { display:flex; gap:8px; flex-wrap:wrap;  justify-content:flex-end;}
-  .primary { background:#111; color:#fff; border:1px solid #111; }
-  .danger { background:#b00020; color:#fff; border:1px solid #b00020; }
-  .good { color:#0a7f2e; font-weight:600; }
-  .bad { color:#b00020; font-weight:600; }
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
-  .chip { font-size:13px; padding:6px 10px; border:1px solid #ddd; border-radius:999px; background:#fff; }
-  .footer { padding:12px; font-size:13px; color:#666; }
-  dialog { border:none; border-radius:12px; padding:0; max-width:820px; width:90vw; }
-  .dlg { padding:16px; }
-  .dlg h3 { margin:0 0 8px; }
-  .form-row { display:grid; grid-template-columns: 1fr 120px 120px auto; gap:8px; align-items:center; margin-bottom:6px;}
-  .form-row input { width:100%; padding:8px; font-size:16px; }
-  .form-row button { padding:8px; border:1px solid #ddd; border-radius:8px; background:#fff; }
-  .right { text-align:right; }
-  .rowbtns { display:flex; gap:6px; flex-wrap:wrap; }
-
-  .bigbtn { font-size:22px; padding:10px 16px; height:48px; }
-</style>
-</head>
-<body>
-<header>
-  <img id="brandLogo" alt="logo" src="logo.png" style="height:36px;margin-right:8px;"><h1 id="title">推しの珈琲</h1>
-  <button class="chip" id="exportCsv">CSV出力</button>
-  <button class="chip" id="openManage">メニュー</button>
-  <button class="chip" id="openHistory">売上履歴</button>
-  <button class="chip" id="openStats">集計</button>
-</header>
-
-<main>
-  <section class="panel">
-    <div class="toolbar">
-      <span class="muted">タップで追加</span>
-    </div>
-    <div class="grid" id="itemsGrid"></div>
-  </section>
-
-  <section class="panel">
-    <table id="cartTable">
-      <thead>
-        <tr><th>商品</th><th class="right">単価</th><th class="qty">数量</th><th class="right">小計</th><th></th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <div class="totals">
-      <div class="row"><div>小計</div><div id="subtotal" class="right">¥0</div></div>
-      <div class="row"><div>割引</div><div id="discount" class="right">¥0</div></div>
-      <div class="row" style="font-size:22px;font-weight:700;"><div>合計</div><div id="total" class="right">¥0</div></div>
-    </div>
-    <div class="pay" style="margin-top:12px;">
-      <input id="cashInput" type="number" inputmode="numeric" placeholder="受取金額（円）">
-      <div class="keys">
-        <button data-cash="50">+50</button> <button data-cash="100">+100</button>
-        <button data-cash="500">+500</button>
-        <button data-cash="1000">+1,000</button>
-        <button id="exact">ぴったり</button>
-      </div>
-    </div>
-    <div class="row" style="margin-top:8px;">
-      <div class="muted">お釣り</div>
-      <div id="change" class="right" style="font-size:22px;font-weight:700;">¥0</div>
-    </div>
-    <div class="actions" style="margin-top:12px;">
-      <button id="clearCart" class="danger bigbtn">カート全クリア</button>
-      <button id="checkout" class="primary bigbtn">会計確定</button>
-</div>
-    <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
-  </section>
-</main>
-
-<dialog id="confirmDlg">
-  <div class="dlg">
-    <h3 id="confirmTitle">確認</h3>
-    <p id="confirmMessage">この操作を実行しますか？</p>
-    <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
-      <button id="confirmNo">戻る</button>
-      <button id="confirmYes" class="primary">はい</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="manageDlg">
-  <div class="dlg">
-    <h3>メニュー編集</h3>
-    <div id="manageList"></div>
-    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
-      <div style="flex:1"></div><button id="saveAllItems" class="primary">保存</button>
-      <button id="addItemBtn">商品追加</button>
-      <button id="closeManage">閉じる</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="historyDlg">
-  <div class="dlg">
-    <h3>売上履歴</h3>
-    <div class="muted" id="historySummary"></div>
-    <table style="margin-top:8px; width:100%;">
-      <thead><tr><th>時間</th><th>No</th><th>合計</th><th>明細</th><th>操作</th></tr></thead>
-      <tbody id="historyBody"></tbody>
-    </table>
-    <div style="margin-top:12px;">
-      <button id="closeHistory" class="primary">閉じる</button>
-    </div>
-  </div>
-
-</dialog>
-
-<dialog id="statsDlg">
-  <div class="dlg">
-    <h3>売れた数・売上の集計</h3>
-    <div class="muted" id="statsSummary"></div>
-    <table style="margin-top:8px; width:100%;">
-      <thead><tr><th>商品</th><th class="right">数量</th><th class="right">売上</th></tr></thead>
-      <tbody id="statsBody"></tbody>
-    </table>
-    <div style="margin-top:12px; display:flex; justify-content:flex-end;">
-      <button id="resetAll" class="danger">初期化</button> <button id="closeStats" class="primary">閉じる</button>
-    </div>
-  </div>
-</dialog>
-
-<script>
-
-async function confirmDialog(msg, title='確認'){
-  const dlg = $('#confirmDlg');
-  $('#confirmTitle').textContent = title;
-  $('#confirmMessage').textContent = msg;
-  dlg.showModal();
-  return new Promise(resolve=>{
-    const onNo = ()=>{ cleanup(); resolve(false); };
-    const onYes = ()=>{ cleanup(); resolve(true); };
-    function cleanup(){
-      $('#confirmNo').removeEventListener('click', onNo);
-      $('#confirmYes').removeEventListener('click', onYes);
-      dlg.close();
-    }
-    $('#confirmNo').addEventListener('click', onNo, { once:true });
-    $('#confirmYes').addEventListener('click', onYes, { once:true });
-  });
-}
-
-async function resetAllData(){
-  // IndexedDB: orders と meta を全削除、シーケンスを初期化
-  await new Promise((res, rej)=>{
-    const tx = idb.db.transaction(['orders','meta'], 'readwrite');
-    tx.objectStore('orders').clear();
-    tx.objectStore('meta').clear();
-    tx.oncomplete = ()=> res();
-    tx.onerror = e => rej(e);
-  });
-  state.cart = [];
-  state.editingOrder = null;
-  state.orderSeq = 1;
-  await renderCart();
-  await renderHistory?.();
-  await renderStats?.();
-  updateOrderNo();
-}
-
 
 
 const $ = sel => document.querySelector(sel);
@@ -277,8 +84,7 @@ function renderItems(){
     .forEach(it=>{
       const btn = document.createElement('button');
       btn.className = 'item' + (it.stock===0 ? ' soldout' : '');
-      btn.textContent = `${it.name}
-${fmt(it.price)}`;
+      btn.textContent = `${it.name}\n${fmt(it.price)}`;
       btn.addEventListener('click', ()=> addToCart(it));
       wrap.appendChild(btn);
     });
@@ -422,7 +228,6 @@ function itemRow(it){
     <button class="danger" data-del>削除</button>
   `;
   const [name, price, delBtn] = row.querySelectorAll('input,input,button');
-  delBtn.textContent = '削除';
   row._bind = { it, name, price };
   delBtn.addEventListener('click', async ()=>{
     if (!confirm(`商品「${it.name}」を削除します。よろしいですか？`)) return;
@@ -492,7 +297,6 @@ async function renderHistory(){
           <button data-del>削除</button>
         `;
         const [unit, qty, delBtn] = row.querySelectorAll('input, input, button');
-        delBtn.textContent = '削除';
         delBtn.addEventListener('click', ()=>{ row.remove(); });
         row._bind = { l, unit, qty };
         list.appendChild(row);
@@ -551,10 +355,8 @@ async function exportCsv(){
   }
   const csv = rows.map(r=> r.map(x=>{
     const s = (x??'').toString();
-    return /[",
-]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
-  }).join(',')).join('
-');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -563,23 +365,12 @@ async function exportCsv(){
   URL.revokeObjectURL(url);
 }
 
-async async function openStats(){
+async function openStats(){
   const dlg = $('#statsDlg');
-  (async () => {
-    await renderStats();
-    dlg.showModal();
-    $('#closeStats').onclick = ()=> dlg.close();
-    $('#resetAll').onclick = async ()=>{
-      const ok = await confirmDialog('初期化すると、売上履歴と集計がすべて消えます。この操作は元に戻せません。','初期化の確認');
-      if (ok) {
-        await resetAllData();
-        alert('初期化しました');
-        dlg.close();
-      }
-    };
-  })();
+  await renderStats();
+  dlg.showModal();
+  $('#closeStats').onclick = ()=> dlg.close();
 }
-
 async function renderStats(){
   const orders = await idb.getAll('orders');
   const map = new Map();
@@ -615,7 +406,3 @@ document.querySelectorAll('button[data-del]').forEach(b=>{
   if (!b.textContent.trim()) b.textContent = '削除';
 });
 
-
-</script>
-</body>
-</html>
