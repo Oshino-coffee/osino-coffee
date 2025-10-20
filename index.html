@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>模擬店レジ（オフライン対応）</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#ffffff">
+<style>
+  :root { --gap:12px; --btn:64px; --font:18px; }
+  html,body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; font-size: var(--font); background:#f7f7f7; }
+  header { position: sticky; top:0; background:#fff; padding:12px; border-bottom:1px solid #eee; display:flex; gap:12px; align-items:center; z-index:10;}
+  header h1 { font-size:20px; margin:0; flex:1; }
+  main { display:grid; grid-template-columns: 1.2fr 1fr; gap: var(--gap); padding: var(--gap); }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  .panel { background:#fff; border:1px solid #eee; border-radius:10px; padding:var(--gap); }
+  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:var(--gap); }
+  @media (max-width: 800px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  button.item { height:var(--btn); font-size:18px; border:1px solid #ddd; border-radius:10px; background:#fafafa; white-space:pre-line; }
+  button.item.soldout { opacity:0.4; text-decoration: line-through; }
+  table { width:100%; border-collapse: collapse; }
+  th,td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
+  td.qty { width:130px; }
+  .qtybtn { width:36px; height:36px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+  .muted { color:#888; font-size:14px; }
+  .totals { display:flex; flex-direction:column; gap:6px; margin-top:12px; }
+  .totals .row { display:flex; justify-content:space-between; }
+  .pay { display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; }
+  .pay input { font-size:24px; padding:8px; width:100%; }
+  .keys { display:flex; flex-wrap:wrap; gap:8px; }
+  .keys button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .primary { background:#111; color:#fff; border:1px solid #111; }
+  .danger { background:#b00020; color:#fff; border:1px solid #b00020; }
+  .good { color:#0a7f2e; font-weight:600; }
+  .bad { color:#b00020; font-weight:600; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { font-size:13px; padding:6px 10px; border:1px solid #ddd; border-radius:999px; background:#fff; }
+  .footer { padding:12px; font-size:13px; color:#666; }
+  dialog { border:none; border-radius:12px; padding:0; max-width:820px; width:90vw; }
+  .dlg { padding:16px; }
+  .dlg h3 { margin:0 0 8px; }
+  .form-row { display:grid; grid-template-columns: 1fr 120px 120px auto; gap:8px; align-items:center; margin-bottom:6px;}
+  .form-row input { width:100%; padding:8px; font-size:16px; }
+  .form-row button { padding:8px; border:1px solid #ddd; border-radius:8px; background:#fff; }
+  .right { text-align:right; }
+  .rowbtns { display:flex; gap:6px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>模擬店レジ</h1>
+  <button class="chip" id="openManage">メニュー/在庫</button>
+  <button class="chip" id="openHistory">売上履歴</button>
+  <button class="chip" id="exportCsv">CSV出力</button>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="toolbar">
+      <span class="muted">タップで追加</span>
+    </div>
+    <div class="grid" id="itemsGrid"></div>
+  </section>
+
+  <section class="panel">
+    <table id="cartTable">
+      <thead>
+        <tr><th>商品</th><th class="right">単価</th><th class="qty">数量</th><th class="right">小計</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="totals">
+      <div class="row"><div>小計</div><div id="subtotal" class="right">¥0</div></div>
+      <div class="row"><div>割引</div><div id="discount" class="right">¥0</div></div>
+      <div class="row" style="font-size:22px;font-weight:700;"><div>合計</div><div id="total" class="right">¥0</div></div>
+    </div>
+    <div class="pay" style="margin-top:12px;">
+      <input id="cashInput" type="number" inputmode="numeric" placeholder="受取金額（円）">
+      <div class="keys">
+        <button data-cash="100">+100</button>
+        <button data-cash="500">+500</button>
+        <button data-cash="1000">+1,000</button>
+        <button id="exact">ぴったり</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <div class="muted">お釣り</div>
+      <div id="change" class="right" style="font-size:22px;font-weight:700;">¥0</div>
+    </div>
+    <div class="actions" style="margin-top:12px;">
+      <button id="checkout" class="primary">会計確定</button>
+      <button id="clearCart" class="danger">カート全クリア</button>
+    </div>
+    <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
+  </section>
+</main>
+
+<div class="footer">現金のみ／税込み運用・校内オフラインOK。設定・履歴は右上ボタンから。</div>
+
+<dialog id="manageDlg">
+  <div class="dlg">
+    <h3>メニュー編集 / 在庫ON-OFF</h3>
+    <div id="manageList"></div>
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button id="addItemBtn">商品追加</button>
+      <button id="closeManage" class="primary">閉じる</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="historyDlg">
+  <div class="dlg">
+    <h3>売上履歴（取消・再会計に対応）</h3>
+    <div class="muted" id="historySummary"></div>
+    <table style="margin-top:8px; width:100%;">
+      <thead><tr><th>時間</th><th>No</th><th>合計</th><th>明細</th><th>操作</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+    <div style="margin-top:12px;">
+      <button id="closeHistory" class="primary">閉じる</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+const $ = sel => document.querySelector(sel);
+const fmt = n => '¥' + (n||0).toLocaleString('ja-JP');
+const nowIso = () => new Date().toISOString();
+function nextOrderId(seq){ return String(seq).padStart(4,'0'); }
+
+const idb = {
+  db: null,
+  open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('mogi-pos', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        db.createObjectStore('items', { keyPath: 'id' });
+        db.createObjectStore('orders', { keyPath: 'id' });
+        db.createObjectStore('meta', { keyPath: 'key' });
+      };
+      req.onsuccess = e => { idb.db = e.target.result; resolve(); };
+      req.onerror = e => reject(e);
+    });
+  },
+  tx(store, mode) { return idb.db.transaction(store, mode).objectStore(store); },
+  get(store, key) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readonly').get(key); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
+  getAll(store) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readonly').getAll(); r.onsuccess=()=>res(r.result); r.onerror=rej; }); },
+  put(store, val) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readwrite').put(val); r.onsuccess=()=>res(); r.onerror=rej; }); },
+  del(store, key) { return new Promise((res, rej)=>{ const r=idb.tx(store,'readwrite').delete(key); r.onsuccess=()=>res(); r.onerror=rej; }); },
+};
+
+const DEFAULT_ITEMS = [
+  { id:'drip',   name:'ドリップコーヒー', price:300, category:'ドリンク', active:true, stock:null },
+  { id:'tea',    name:'紅茶',             price:300, category:'ドリンク', active:true, stock:null },
+  { id:'affo',   name:'アフォガード',     price:450, category:'スイーツ', active:true, stock:null },
+  { id:'latte',  name:'ラテ',             price:380, category:'ドリンク', active:true, stock:null },
+];
+
+const state = {
+  items: [],
+  cart: [],
+  orderSeq: 1,
+};
+
+(async function init(){
+  await idb.open();
+  const existing = await idb.getAll('items');
+  if (!existing || existing.length === 0) {
+    for (const it of DEFAULT_ITEMS) await idb.put('items', it);
+  }
+  state.items = await idb.getAll('items');
+  const meta = await idb.get('meta','orderSeq');
+  state.orderSeq = (meta && meta.value) ? meta.value : 1;
+
+  renderItems();
+  renderCart();
+  updateOrderNo();
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js');
+  }
+
+  $('#exact').addEventListener('click', ()=> { $('#cashInput').value = calcTotal(); updateChange(); });
+  document.querySelectorAll('[data-cash]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const inc = parseInt(btn.dataset.cash,10);
+      const v = parseInt($('#cashInput').value||0,10);
+      $('#cashInput').value = (v+inc);
+      updateChange();
+    });
+  });
+  $('#cashInput').addEventListener('input', updateChange);
+  $('#checkout').addEventListener('click', onCheckout);
+  $('#clearCart').addEventListener('click', ()=>{ state.cart=[]; renderCart(); });
+
+  $('#openManage').addEventListener('click', openManage);
+  $('#openHistory').addEventListener('click', openHistory);
+  $('#exportCsv').addEventListener('click', exportCsv);
+})();
+
+function renderItems(){
+  const wrap = $('#itemsGrid');
+  wrap.innerHTML = '';
+  state.items
+    .filter(it=> it.active)
+    .forEach(it=>{
+      const btn = document.createElement('button');
+      btn.className = 'item' + (it.stock===0 ? ' soldout' : '');
+      btn.textContent = `${it.name}\n${fmt(it.price)}`;
+      btn.addEventListener('click', ()=> addToCart(it));
+      wrap.appendChild(btn);
+    });
+}
+
+function addToCart(it){
+  if (it.stock===0) return;
+  const line = state.cart.find(l=> l.id===it.id);
+  if (line) line.qty++;
+  else state.cart.push({ id:it.id, name:it.name, price:it.price, qty:1 });
+  renderCart();
+}
+function changeQty(id,delta){
+  const line = state.cart.find(l=> l.id===id);
+  if (!line) return;
+  line.qty += delta;
+  if (line.qty<=0) state.cart = state.cart.filter(l=>l.id!==id);
+  renderCart();
+}
+function lineTotal(l){ return l.price * l.qty; }
+function calcSubtotal(){ return state.cart.reduce((a,l)=> a+lineTotal(l), 0); }
+function calcTotal(){ return calcSubtotal(); }
+function renderCart(){
+  const tbody = $('#cartTable tbody');
+  tbody.innerHTML='';
+  for (const l of state.cart) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${l.name}</td>
+      <td class="right">${fmt(l.price)}</td>
+      <td class="qty">
+        <button class="qtybtn" aria-label="minus">-</button>
+        <span style="display:inline-block; width:36px; text-align:center;">${l.qty}</span>
+        <button class="qtybtn" aria-label="plus">+</button>
+      </td>
+      <td class="right">${fmt(lineTotal(l))}</td>
+      <td class="right"><button class="qtybtn" aria-label="remove">×</button></td>
+    `;
+    const [minus, plus] = tr.querySelectorAll('.qtybtn'); // 修正：正しく minus/plus を取得
+    minus.addEventListener('click', ()=> changeQty(l.id,-1));
+    plus.addEventListener('click', ()=> changeQty(l.id,+1));
+    tr.querySelector('[aria-label="remove"]').addEventListener('click', ()=>{ state.cart = state.cart.filter(x=>x.id!==l.id); renderCart(); });
+    tbody.appendChild(tr);
+  }
+  $('#subtotal').textContent = fmt(calcSubtotal());
+  $('#discount').textContent = fmt(0);
+  $('#total').textContent = fmt(calcTotal());
+  updateChange();
+}
+function updateOrderNo(){ $('#orderNo').textContent = nextOrderId(state.orderSeq); }
+function updateChange(){
+  const cash = parseInt($('#cashInput').value||0,10);
+  const chg = Math.max(0, cash - calcTotal());
+  $('#change').textContent = fmt(chg);
+  $('#change').className = chg>=0 ? 'right good' : 'right bad';
+}
+
+async function onCheckout(){
+  if (state.cart.length===0) { alert('カートが空です'); return; }
+  const cash = parseInt($('#cashInput').value||0,10);
+  const total = calcTotal();
+  if (isNaN(cash) || cash < total) { alert('受取金額が不足しています'); return; }
+
+  const order = {
+    id: 'o-' + nowIso(),
+    orderNo: nextOrderId(state.orderSeq),
+    ts: nowIso(),
+    lines: state.cart.map(l=>({id:l.id, name:l.name, unit:l.price, qty:l.qty, line:l.price*l.qty})),
+    subtotal: total,
+    discount: 0,
+    total: total,
+    cash: cash,
+    change: cash-total,
+  };
+  await idb.put('orders', order);
+
+  state.cart = [];
+  $('#cashInput').value = '';
+  updateChange();
+  renderCart();
+
+  state.orderSeq += 1;
+  await idb.put('meta', { key:'orderSeq', value: state.orderSeq });
+  updateOrderNo();
+
+  alert(`注文 #${order.orderNo} 会計完了。お釣り：${fmt(order.change)}`);
+}
+
+function openManage(){
+  const dlg = $('#manageDlg');
+  buildManageList();
+  dlg.showModal();
+  $('#addItemBtn').onclick = addItemFormRow;
+  $('#closeManage').onclick = ()=> dlg.close();
+}
+function buildManageList(){
+  const box = $('#manageList');
+  box.innerHTML = '';
+  state.items.forEach(it=> box.appendChild(itemRow(it)));
+}
+function itemRow(it){
+  const row = document.createElement('div');
+  row.className='form-row';
+  row.innerHTML = `
+    <input value="${it.name}" aria-label="name">
+    <input type="number" value="${it.price}" aria-label="price">
+    <button class="toggle">${it.active ? '販売中' : '停止中'}</button>
+    <button class="save">保存</button>
+  `;
+  const [name, price, toggle, save] = row.querySelectorAll('input,button');
+  toggle.addEventListener('click', ()=> {
+    it.active = !it.active; toggle.textContent = it.active ? '販売中' : '停止中';
+  });
+  save.addEventListener('click', async ()=>{
+    it.name = name.value.trim()||it.name;
+    it.price = Math.max(0, parseInt(price.value||0,10));
+    await idb.put('items', it);
+    state.items = await idb.getAll('items');
+    renderItems();
+    alert('保存しました');
+  });
+  return row;
+}
+function addItemFormRow(){
+  const nid = 'i-' + Math.random().toString(36).slice(2,8);
+  const it = { id:nid, name:'新商品', price:0, category:'', active:true, stock:null };
+  state.items.push(it);
+  $('#manageList').appendChild(itemRow(it));
+}
+
+async function openHistory(){
+  const dlg = $('#historyDlg');
+  await renderHistory();
+  dlg.showModal();
+  $('#closeHistory').onclick = ()=> dlg.close();
+}
+async function renderHistory(){
+  const orders = (await idb.getAll('orders')).sort((a,b)=> a.ts<b.ts?1:-1);
+  const t = orders.reduce((s,o)=> s+o.total, 0);
+  $('#historySummary').textContent = `件数：${orders.length}　合計：${fmt(t)}`;
+  const body = $('#historyBody');
+  body.innerHTML = '';
+  for (const o of orders) {
+    const tr = document.createElement('tr');
+    const detail = o.lines.map(l=> `${l.name}×${l.qty}`).join('、');
+    tr.innerHTML = `<td>${new Date(o.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${o.orderNo}</td><td class="right">${fmt(o.total)}</td><td>${detail}</td>
+      <td class="rowbtns">
+        <button data-act="rep">再会計</button>
+        <button data-act="del" class="danger">取消</button>
+      </td>`;
+    tr.querySelector('[data-act="rep"]').addEventListener('click', ()=> {
+      // 履歴からカートに復元 → 修正して会計し直し
+      state.cart = o.lines.map(l=> ({ id:l.id, name:l.name, price:l.unit, qty:l.qty }));
+      document.querySelector('dialog#historyDlg').close();
+      renderCart();
+      alert('明細をカートに復元しました。修正して再度「会計確定」してください。');
+    });
+    tr.querySelector('[data-act="del"]').addEventListener('click', async ()=> {
+      if (!confirm(`注文 #${o.orderNo} を取消（削除）します。よろしいですか？`)) return;
+      await idb.del('orders', o.id);
+      await renderHistory();
+    });
+    body.appendChild(tr);
+  }
+}
+
+async function exportCsv(){
+  const orders = await idb.getAll('orders');
+  const rows = [['time','orderNo','item','qty','unit','line','total','cash','change']];
+  for (const o of orders) {
+    for (const l of o.lines) {
+      rows.push([o.ts, o.orderNo, l.name, l.qty, l.unit, l.line, o.total, o.cash, o.change]);
+    }
+  }
+  const csv = rows.map(r=> r.map(x=>{
+    const s = (x??'').toString();
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `sales-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
