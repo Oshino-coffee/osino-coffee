@@ -3,8 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-<title>模擬店レジ（オフライン対応）</title>
+<title>推しの珈琲（オフライン対応）</title>
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <meta name="theme-color" content="#ffffff">
 <style>
   :root { --gap:12px; --btn:64px; --font:18px; }
@@ -29,7 +31,7 @@
   .pay input { font-size:24px; padding:8px; width:100%; }
   .keys { display:flex; flex-wrap:wrap; gap:8px; }
   .keys button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; background:#fff; }
-  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .actions { display:flex; justify-content:flex-end; gap:8px; }
   .primary { background:#111; color:#fff; border:1px solid #111; }
   .danger { background:#b00020; color:#fff; border:1px solid #b00020; }
   .good { color:#0a7f2e; font-weight:600; }
@@ -45,14 +47,27 @@
   .form-row button { padding:8px; border:1px solid #ddd; border-radius:8px; background:#fff; }
   .right { text-align:right; }
   .rowbtns { display:flex; gap:6px; flex-wrap:wrap; }
+
+  .bigbtn { font-size:22px; padding:10px 16px; height:48px; }
+
+#manageDlg .form-row{ display:grid; grid-template-columns: 1fr 120px 88px; gap:8px; align-items:center; }
+#manageDlg .form-row input[aria-label="name"]{ width:100%; }
+#manageDlg .form-row input[aria-label="price"]{ width:100%; text-align:right; }
+#manageDlg .form-row button[data-del]{ min-width:80px; }
+
+
+  .form-row { display:grid; grid-template-columns: 1fr 120px auto; gap:8px; align-items:center; }
+  .form-row input[aria-label="name"] { min-width: 0; }
+  .form-row input[aria-label="price"] { text-align:right; }
 </style>
 </head>
 <body>
 <header>
-  <h1>模擬店レジ</h1>
-  <button class="chip" id="openManage">メニュー/在庫</button>
-  <button class="chip" id="openHistory">売上履歴</button>
+  <img id="brandLogo" alt="logo" src="logo.png" style="height:36px;margin-right:8px;"><h1 id="title">推しの珈琲</h1>
   <button class="chip" id="exportCsv">CSV出力</button>
+  <button class="chip" id="openManage">メニュー</button>
+  <button class="chip" id="openHistory">売上履歴</button>
+  <button class="chip" id="openStats">集計</button>
 </header>
 
 <main>
@@ -78,7 +93,7 @@
     <div class="pay" style="margin-top:12px;">
       <input id="cashInput" type="number" inputmode="numeric" placeholder="受取金額（円）">
       <div class="keys">
-        <button data-cash="100">+100</button>
+        <button data-cash="100">+50</button> <button data-cash="100">+100</button>
         <button data-cash="500">+500</button>
         <button data-cash="1000">+1,000</button>
         <button id="exact">ぴったり</button>
@@ -89,29 +104,27 @@
       <div id="change" class="right" style="font-size:22px;font-weight:700;">¥0</div>
     </div>
     <div class="actions" style="margin-top:12px;">
-      <button id="checkout" class="primary">会計確定</button>
-      <button id="clearCart" class="danger">カート全クリア</button>
+      <button id="clearCart" class="danger bigbtn">カート全クリア</button>
+      <button id="checkout" class="primary bigbtn">会計確定</button>
     </div>
     <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
   </section>
 </main>
-
-<div class="footer">現金のみ／税込み運用・校内オフラインOK。設定・履歴は右上ボタンから。</div>
-
 <dialog id="manageDlg">
   <div class="dlg">
-    <h3>メニュー編集 / 在庫ON-OFF</h3>
+    <h3>メニュー編集</h3>
     <div id="manageList"></div>
     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+      <div style="flex:1"></div><button id="saveAllItems" class="primary">保存</button>
       <button id="addItemBtn">商品追加</button>
-      <button id="closeManage" class="primary">閉じる</button>
+      <button id="closeManage">閉じる</button>
     </div>
   </div>
 </dialog>
 
 <dialog id="historyDlg">
   <div class="dlg">
-    <h3>売上履歴（取消・再会計に対応）</h3>
+    <h3>売上履歴</h3>
     <div class="muted" id="historySummary"></div>
     <table style="margin-top:8px; width:100%;">
       <thead><tr><th>時間</th><th>No</th><th>合計</th><th>明細</th><th>操作</th></tr></thead>
@@ -121,9 +134,25 @@
       <button id="closeHistory" class="primary">閉じる</button>
     </div>
   </div>
+
+</dialog>
+
+<dialog id="statsDlg">
+  <div class="dlg">
+    <h3>売れた数・売上の集計</h3>
+    <div class="muted" id="statsSummary"></div>
+    <table style="margin-top:8px; width:100%;">
+      <thead><tr><th>商品</th><th class="right">数量</th><th class="right">売上</th></tr></thead>
+      <tbody id="statsBody"></tbody>
+    </table>
+    <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+      <button id="closeStats" class="primary">閉じる</button>
+    </div>
+  </div>
 </dialog>
 
 <script>
+
 const $ = sel => document.querySelector(sel);
 const fmt = n => '¥' + (n||0).toLocaleString('ja-JP');
 const nowIso = () => new Date().toISOString();
@@ -159,7 +188,7 @@ const DEFAULT_ITEMS = [
 ];
 
 const state = {
-  items: [],
+  items: [], editingOrder:null,
   cart: [],
   orderSeq: 1,
 };
@@ -266,69 +295,116 @@ function updateChange(){
   $('#change').className = chg>=0 ? 'right good' : 'right bad';
 }
 
+
 async function onCheckout(){
-  if (state.cart.length===0) { alert('カートが空です'); return; }
+  const lines = state.cart.map(l=> ({ id:l.id, name:l.name, unit:l.price, qty:l.qty }));
+  const total = lines.reduce((s,l)=> s + l.unit*l.qty, 0);
+  if (lines.length===0) { alert('カートが空です'); return; }
   const cash = parseInt($('#cashInput').value||0,10);
-  const total = calcTotal();
-  if (isNaN(cash) || cash < total) { alert('受取金額が不足しています'); return; }
-
-  const order = {
-    id: 'o-' + nowIso(),
-    orderNo: nextOrderId(state.orderSeq),
-    ts: nowIso(),
-    lines: state.cart.map(l=>({id:l.id, name:l.name, unit:l.price, qty:l.qty, line:l.price*l.qty})),
-    subtotal: total,
-    discount: 0,
-    total: total,
-    cash: cash,
-    change: cash-total,
-  };
-  await idb.put('orders', order);
-
+  if (cash < total) { alert('受取金額が不足しています'); return; }
+  // meta for order sequence
+  const seq = (await idb.get('meta','seq')) || { key:'seq', value:1 };
+  let order;
+  if (state.editingOrder){
+    // 上書き更新：id/orderNoはそのまま
+    order = await idb.get('orders', state.editingOrder);
+    if (!order) { alert('編集対象の伝票が見つかりませんでした'); return; }
+    order.lines = lines;
+    order.total = total;
+    order.ts = nowIso();
+    order.edited = true;
+    await idb.put('orders', order);
+    state.editingOrder = null;
+  } else {
+    const id = crypto.randomUUID();
+    const orderNo = nextOrderId(seq.value);
+    order = { id, orderNo, ts: nowIso(), lines, total };
+    await idb.put('orders', order);
+    seq.value += 1;
+    await idb.put('meta', seq);
+  }
+  // 数を消費（管理がある場合のみ）
+  for (const l of lines){
+    const item = state.items.find(x=> x.id===l.id);
+    if (item && typeof item.stock === 'number' && item.stock!==null){
+      item.stock = Math.max(0, (item.stock||0) - l.qty);
+      await idb.put('items', item);
+    }
+  }
   state.cart = [];
-  $('#cashInput').value = '';
-  updateChange();
+  $('#cashInput').value='';
+  renderItems();
   renderCart();
-
-  state.orderSeq += 1;
-  await idb.put('meta', { key:'orderSeq', value: state.orderSeq });
-  updateOrderNo();
-
-  alert(`注文 #${order.orderNo} 会計完了。お釣り：${fmt(order.change)}`);
+  alert('会計を反映しました');
 }
+
+
+
 
 function openManage(){
   const dlg = $('#manageDlg');
   buildManageList();
   dlg.showModal();
+  // Prevent soft keyboard auto-popup on tablets by removing focus from inputs
+  dlg.setAttribute('tabindex','-1');
+  dlg.focus();
+  if (document.activeElement) { document.activeElement.blur(); }
   $('#addItemBtn').onclick = addItemFormRow;
+  $('#saveAllItems').onclick = async ()=>{
+    const rows = Array.from(document.querySelectorAll('#manageList .form-row'));
+    for (const r of rows) {
+      const { it, name, price } = r._bind || {};
+      if (!it) continue;
+      it.name = (name.value||'').trim() || it.name;
+      it.price = Math.max(0, parseInt(price.value||0,10));
+      it.active = true;
+      await idb.put('items', it);
+    }
+    state.items = await idb.getAll('items');
+    renderItems();
+    alert('保存しました');
+  };
   $('#closeManage').onclick = ()=> dlg.close();
 }
+ = r._bind || {};
+      if (!it) continue;
+      it.name = (name.value||'').trim() || it.name;
+      it.price = Math.max(0, parseInt(price.value||0,10));
+      it.active = true; // アクティブ表記は廃止、常に販売可能として扱う
+      await idb.put('items', it);
+    }
+    state.items = await idb.getAll('items');
+    renderItems();
+    alert('保存しました');
+  };
+  $('#closeManage').onclick = ()=> dlg.close();
+}
+
 function buildManageList(){
   const box = $('#manageList');
   box.innerHTML = '';
   state.items.forEach(it=> box.appendChild(itemRow(it)));
 }
+
+
+
+
 function itemRow(it){
   const row = document.createElement('div');
   row.className='form-row';
   row.innerHTML = `
     <input value="${it.name}" aria-label="name">
     <input type="number" value="${it.price}" aria-label="price">
-    <button class="toggle">${it.active ? '販売中' : '停止中'}</button>
-    <button class="save">保存</button>
+    <button class="danger" data-del>削除</button>
   `;
-  const [name, price, toggle, save] = row.querySelectorAll('input,button');
-  toggle.addEventListener('click', ()=> {
-    it.active = !it.active; toggle.textContent = it.active ? '販売中' : '停止中';
-  });
-  save.addEventListener('click', async ()=>{
-    it.name = name.value.trim()||it.name;
-    it.price = Math.max(0, parseInt(price.value||0,10));
-    await idb.put('items', it);
-    state.items = await idb.getAll('items');
+  const [name, price, delBtn] = row.querySelectorAll('input,input,button');
+  row._bind = { it, name, price };
+  delBtn.addEventListener('click', async ()=>{
+    if (!confirm(`商品「${it.name}」を削除します。よろしいですか？`)) return;
+    await idb.del('items', it.id);
+    state.items = (await idb.getAll('items'));
+    row.remove();
     renderItems();
-    alert('保存しました');
   });
   return row;
 }
@@ -345,36 +421,97 @@ async function openHistory(){
   dlg.showModal();
   $('#closeHistory').onclick = ()=> dlg.close();
 }
+
 async function renderHistory(){
   const orders = (await idb.getAll('orders')).sort((a,b)=> a.ts<b.ts?1:-1);
   const t = orders.reduce((s,o)=> s+o.total, 0);
-  $('#historySummary').textContent = `件数：${orders.length}　合計：${fmt(t)}`;
+  $('#historySummary').textContent = `件数：${orders.length}　通算売上：${fmt(t)}`;
   const body = $('#historyBody');
   body.innerHTML = '';
   for (const o of orders) {
     const tr = document.createElement('tr');
     const detail = o.lines.map(l=> `${l.name}×${l.qty}`).join('、');
+    const mark = o.edited ? ' ✅' : '';
     tr.innerHTML = `<td>${new Date(o.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}</td>
-      <td>${o.orderNo}</td><td class="right">${fmt(o.total)}</td><td>${detail}</td>
+      <td>${o.orderNo}${mark}</td><td class="right">${fmt(o.total)}</td><td>${detail}</td>
       <td class="rowbtns">
-        <button data-act="rep">再会計</button>
-        <button data-act="del" class="danger">取消</button>
+        <button data-act="edit">編集</button>
       </td>`;
-    tr.querySelector('[data-act="rep"]').addEventListener('click', ()=> {
-      // 履歴からカートに復元 → 修正して会計し直し
-      state.cart = o.lines.map(l=> ({ id:l.id, name:l.name, price:l.unit, qty:l.qty }));
-      document.querySelector('dialog#historyDlg').close();
-      renderCart();
-      alert('明細をカートに復元しました。修正して再度「会計確定」してください。');
-    });
-    tr.querySelector('[data-act="del"]').addEventListener('click', async ()=> {
-      if (!confirm(`注文 #${o.orderNo} を取消（削除）します。よろしいですか？`)) return;
-      await idb.del('orders', o.id);
-      await renderHistory();
+    // Inline editor row
+    const editor = document.createElement('tr');
+    editor.style.display = 'none';
+    const editorTd = document.createElement('td');
+    editorTd.colSpan = 5;
+    editor.appendChild(editorTd);
+    const buildEditor = ()=>{
+      const wrap = document.createElement('div');
+      wrap.style.padding = '8px';
+      wrap.style.background = '#fafafa';
+      wrap.style.border = '1px solid #eee';
+      // Build editable lines
+      o.lines = o.lines || [];
+      const list = document.createElement('div');
+      for (let i=0;i<o.lines.length;i++){
+        const l = o.lines[i];
+        const row = document.createElement('div');
+        row.style.display='grid';
+        row.style.gridTemplateColumns='2fr 1fr 1fr auto';
+        row.style.gap='8px';
+        row.style.margin='6px 0';
+        row.innerHTML = `
+          <div>${l.name}</div>
+          <input type="number" min="0" value="${l.unit}" aria-label="unit">
+          <input type="number" min="0" value="${l.qty}" aria-label="qty">
+          <button data-del>削除</button>
+        `;
+        const [unit, qty, delBtn] = row.querySelectorAll('input, input, button');
+        delBtn.addEventListener('click', ()=>{ row.remove(); });
+        row._bind = { l, unit, qty };
+        list.appendChild(row);
+      }
+      wrap.appendChild(list);
+      const ctrl = document.createElement('div');
+      ctrl.style.display='flex'; ctrl.style.gap='8px'; ctrl.style.justifyContent='flex-end'; ctrl.style.marginTop='8px';
+      const saveBtn = document.createElement('button'); saveBtn.textContent='保存';
+      const cancelBtn = document.createElement('button'); cancelBtn.textContent='キャンセル';
+      ctrl.appendChild(cancelBtn); ctrl.appendChild(saveBtn);
+      wrap.appendChild(ctrl);
+      // Handlers
+      cancelBtn.addEventListener('click', ()=>{
+        editor.style.display='none';
+      });
+      saveBtn.addEventListener('click', async ()=>{
+        // Collect lines
+        const rows = Array.from(list.children);
+        const newLines = [];
+        let total = 0;
+        for (const r of rows){
+          const { l, unit, qty } = r._bind || {};
+          const u = Math.max(0, parseInt(unit.value||0,10));
+          const q = Math.max(0, parseInt(qty.value||0,10));
+          if (q===0) continue;
+          newLines.push({ id:l.id, name:l.name, unit:u, qty:q });
+          total += u*q;
+        }
+        o.lines = newLines;
+        o.total = total;
+        // o.ts は会計確定時刻のまま維持
+        o.edited = true;
+        await idb.put('orders', o); // 同じ id で上書き（旧伝票は増えない）
+        await renderHistory();
+      });
+      return wrap;
+    };
+    tr.querySelector('[data-act="edit"]').addEventListener('click', ()=>{
+      editorTd.innerHTML = '';
+      editorTd.appendChild(buildEditor());
+      editor.style.display = editor.style.display==='none' ? '' : 'none';
     });
     body.appendChild(tr);
+    body.appendChild(editor);
   }
 }
+
 
 async function exportCsv(){
   const orders = await idb.getAll('orders');
@@ -395,6 +532,42 @@ async function exportCsv(){
   a.click();
   URL.revokeObjectURL(url);
 }
+
+async function openStats(){
+  const dlg = $('#statsDlg');
+  await renderStats();
+  dlg.showModal();
+  $('#closeStats').onclick = ()=> dlg.close();
+}
+async function renderStats(){
+  const orders = await idb.getAll('orders');
+  const map = new Map();
+  let tq=0, tt=0;
+  for (const o of orders){
+    for (const l of (o.lines||[])){
+      const k = l.id + '|' + l.name;
+      const cur = map.get(k) || { name:l.name, qty:0, sales:0 };
+      cur.qty += l.qty;
+      cur.sales += l.qty * l.unit;
+      map.set(k, cur);
+      tq += l.qty; tt += l.qty * l.unit;
+    }
+  }
+  const arr = Array.from(map.values()).sort((a,b)=> b.qty - a.qty);
+  const body = $('#statsBody'); body.innerHTML='';
+  for (const r of arr){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.name}</td><td class="right">${r.qty}</td><td class="right">${fmt(r.sales)}</td>`;
+    body.appendChild(tr);
+  }
+  $('#statsSummary').textContent = `合計数量：${tq}　合計売上：${fmt(tt)}`;
+}
+
+// Wire header button
+$('#openStats').addEventListener('click', openStats);
+
+
+
 </script>
 </body>
 </html>
