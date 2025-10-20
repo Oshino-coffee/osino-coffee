@@ -1,4 +1,4 @@
-const CACHE = 'mogi-pos-v2'; // キャッシュ名更新で確実に上書き
+const CACHE = 'mogi-pos-v3'; // キャッシュ名更新で確実に上書き
 const ASSETS = [
   './',
   './index.html',

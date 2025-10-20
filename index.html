@@ -31,7 +31,7 @@
   .pay input { font-size:24px; padding:8px; width:100%; }
   .keys { display:flex; flex-wrap:wrap; gap:8px; }
   .keys button { padding:10px 14px; border:1px solid #ddd; border-radius:8px; background:#fff; }
-  .actions { display:flex; justify-content:flex-end; gap:8px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap;  justify-content:flex-end;}
   .primary { background:#111; color:#fff; border:1px solid #111; }
   .danger { background:#b00020; color:#fff; border:1px solid #b00020; }
   .good { color:#0a7f2e; font-weight:600; }
@@ -49,16 +49,6 @@
   .rowbtns { display:flex; gap:6px; flex-wrap:wrap; }
 
   .bigbtn { font-size:22px; padding:10px 16px; height:48px; }
-
-#manageDlg .form-row{ display:grid; grid-template-columns: 1fr 120px 88px; gap:8px; align-items:center; }
-#manageDlg .form-row input[aria-label="name"]{ width:100%; }
-#manageDlg .form-row input[aria-label="price"]{ width:100%; text-align:right; }
-#manageDlg .form-row button[data-del]{ min-width:80px; }
-
-
-  .form-row { display:grid; grid-template-columns: 1fr 120px auto; gap:8px; align-items:center; }
-  .form-row input[aria-label="name"] { min-width: 0; }
-  .form-row input[aria-label="price"] { text-align:right; }
 </style>
 </head>
 <body>
@@ -106,7 +96,7 @@
     <div class="actions" style="margin-top:12px;">
       <button id="clearCart" class="danger bigbtn">カート全クリア</button>
       <button id="checkout" class="primary bigbtn">会計確定</button>
-    </div>
+</div>
     <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
   </section>
 </main>
@@ -340,33 +330,18 @@ async function onCheckout(){
 
 
 
-
 function openManage(){
   const dlg = $('#manageDlg');
   buildManageList();
   dlg.showModal();
-  // Prevent soft keyboard auto-popup on tablets by removing focus from inputs
-  dlg.setAttribute('tabindex','-1');
-  dlg.focus();
-  if (document.activeElement) { document.activeElement.blur(); }
-  $('#addItemBtn').onclick = addItemFormRow;
+  
+  // タブレットでの自動フォーカスによるキーボード起動を抑制
+  if ('ontouchstart' in window) { setTimeout(()=>{ const ae=document.activeElement; if (ae && ae.tagName==='INPUT') ae.blur(); }, 0); }
+$('#addItemBtn').onclick = addItemFormRow;
   $('#saveAllItems').onclick = async ()=>{
     const rows = Array.from(document.querySelectorAll('#manageList .form-row'));
     for (const r of rows) {
       const { it, name, price } = r._bind || {};
-      if (!it) continue;
-      it.name = (name.value||'').trim() || it.name;
-      it.price = Math.max(0, parseInt(price.value||0,10));
-      it.active = true;
-      await idb.put('items', it);
-    }
-    state.items = await idb.getAll('items');
-    renderItems();
-    alert('保存しました');
-  };
-  $('#closeManage').onclick = ()=> dlg.close();
-}
- = r._bind || {};
       if (!it) continue;
       it.name = (name.value||'').trim() || it.name;
       it.price = Math.max(0, parseInt(price.value||0,10));
@@ -387,8 +362,6 @@ function buildManageList(){
 }
 
 
-
-
 function itemRow(it){
   const row = document.createElement('div');
   row.className='form-row';
@@ -401,7 +374,9 @@ function itemRow(it){
   row._bind = { it, name, price };
   delBtn.addEventListener('click', async ()=>{
     if (!confirm(`商品「${it.name}」を削除します。よろしいですか？`)) return;
+    // DBから削除
     await idb.del('items', it.id);
+    // stateから削除
     state.items = (await idb.getAll('items'));
     row.remove();
     renderItems();
@@ -567,6 +542,12 @@ async function renderStats(){
 $('#openStats').addEventListener('click', openStats);
 
 
+
+
+// 追加: data-delボタンにテキスト「削除」を強制（キャッシュやスタイルの不整合対策）
+document.querySelectorAll('button[data-del]').forEach(b=>{
+  if (!b.textContent.trim()) b.textContent = '削除';
+});
 
 </script>
 </body>
