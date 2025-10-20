@@ -52,6 +52,17 @@
 </style>
 </head>
 <body>
+<script>
+(function(){
+  const password = "oshinocafee2025";
+  const input = prompt("パスワードを入力してください：");
+  if (input !== password) {
+    document.body.innerHTML = "<h2 style='text-align:center;margin-top:20%;font-family:sans-serif;'>アクセスできません</h2>";
+    throw new Error("Unauthorized");
+  }
+})();
+</script>
+
 <header>
   <img id="brandLogo" alt="logo" src="logo.png" style="height:36px;margin-right:8px;"><h1 id="title">推しの珈琲</h1>
   <button class="chip" id="exportCsv">CSV出力</button>
@@ -83,7 +94,7 @@
     <div class="pay" style="margin-top:12px;">
       <input id="cashInput" type="number" inputmode="numeric" placeholder="受取金額（円）">
       <div class="keys">
-        <button data-cash="50">+50</button> <button data-cash="100">+100</button>
+        <button data-cash="100">+50</button> <button data-cash="100">+100</button>
         <button data-cash="500">+500</button>
         <button data-cash="1000">+1,000</button>
         <button id="exact">ぴったり</button>
@@ -100,18 +111,6 @@
     <div class="muted" style="margin-top:8px;">注文番号：<span id="orderNo">--</span></div>
   </section>
 </main>
-
-<dialog id="confirmDlg">
-  <div class="dlg">
-    <h3 id="confirmTitle">確認</h3>
-    <p id="confirmMessage">この操作を実行しますか？</p>
-    <div style="margin-top:12px; display:flex; justify-content:flex-end; gap:8px;">
-      <button id="confirmNo">戻る</button>
-      <button id="confirmYes" class="primary">はい</button>
-    </div>
-  </div>
-</dialog>
-
 <dialog id="manageDlg">
   <div class="dlg">
     <h3>メニュー編集</h3>
@@ -148,50 +147,12 @@
       <tbody id="statsBody"></tbody>
     </table>
     <div style="margin-top:12px; display:flex; justify-content:flex-end;">
-      <button id="resetAll" class="danger">初期化</button> <button id="closeStats" class="primary">閉じる</button>
+      <button id="closeStats" class="primary">閉じる</button>
     </div>
   </div>
 </dialog>
 
 <script>
-
-async function confirmDialog(msg, title='確認'){
-  const dlg = $('#confirmDlg');
-  $('#confirmTitle').textContent = title;
-  $('#confirmMessage').textContent = msg;
-  dlg.showModal();
-  return new Promise(resolve=>{
-    const onNo = ()=>{ cleanup(); resolve(false); };
-    const onYes = ()=>{ cleanup(); resolve(true); };
-    function cleanup(){
-      $('#confirmNo').removeEventListener('click', onNo);
-      $('#confirmYes').removeEventListener('click', onYes);
-      dlg.close();
-    }
-    $('#confirmNo').addEventListener('click', onNo, { once:true });
-    $('#confirmYes').addEventListener('click', onYes, { once:true });
-  });
-}
-
-async function resetAllData(){
-  // IndexedDB: orders と meta を全削除、シーケンスを初期化
-  await new Promise((res, rej)=>{
-    const tx = idb.db.transaction(['orders','meta'], 'readwrite');
-    tx.objectStore('orders').clear();
-    tx.objectStore('meta').clear();
-    tx.oncomplete = ()=> res();
-    tx.onerror = e => rej(e);
-  });
-  state.cart = [];
-  state.editingOrder = null;
-  state.orderSeq = 1;
-  await renderCart();
-  await renderHistory?.();
-  await renderStats?.();
-  updateOrderNo();
-}
-
-
 
 const $ = sel => document.querySelector(sel);
 const fmt = n => '¥' + (n||0).toLocaleString('ja-JP');
@@ -277,8 +238,7 @@ function renderItems(){
     .forEach(it=>{
       const btn = document.createElement('button');
       btn.className = 'item' + (it.stock===0 ? ' soldout' : '');
-      btn.textContent = `${it.name}
-${fmt(it.price)}`;
+      btn.textContent = `${it.name}\n${fmt(it.price)}`;
       btn.addEventListener('click', ()=> addToCart(it));
       wrap.appendChild(btn);
     });
@@ -422,7 +382,6 @@ function itemRow(it){
     <button class="danger" data-del>削除</button>
   `;
   const [name, price, delBtn] = row.querySelectorAll('input,input,button');
-  delBtn.textContent = '削除';
   row._bind = { it, name, price };
   delBtn.addEventListener('click', async ()=>{
     if (!confirm(`商品「${it.name}」を削除します。よろしいですか？`)) return;
@@ -492,7 +451,6 @@ async function renderHistory(){
           <button data-del>削除</button>
         `;
         const [unit, qty, delBtn] = row.querySelectorAll('input, input, button');
-        delBtn.textContent = '削除';
         delBtn.addEventListener('click', ()=>{ row.remove(); });
         row._bind = { l, unit, qty };
         list.appendChild(row);
@@ -551,10 +509,8 @@ async function exportCsv(){
   }
   const csv = rows.map(r=> r.map(x=>{
     const s = (x??'').toString();
-    return /[",
-]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
-  }).join(',')).join('
-');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+  }).join(',')).join('\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -563,23 +519,12 @@ async function exportCsv(){
   URL.revokeObjectURL(url);
 }
 
-async async function openStats(){
+async function openStats(){
   const dlg = $('#statsDlg');
-  (async () => {
-    await renderStats();
-    dlg.showModal();
-    $('#closeStats').onclick = ()=> dlg.close();
-    $('#resetAll').onclick = async ()=>{
-      const ok = await confirmDialog('初期化すると、売上履歴と集計がすべて消えます。この操作は元に戻せません。','初期化の確認');
-      if (ok) {
-        await resetAllData();
-        alert('初期化しました');
-        dlg.close();
-      }
-    };
-  })();
+  await renderStats();
+  dlg.showModal();
+  $('#closeStats').onclick = ()=> dlg.close();
 }
-
 async function renderStats(){
   const orders = await idb.getAll('orders');
   const map = new Map();
@@ -614,7 +559,6 @@ $('#openStats').addEventListener('click', openStats);
 document.querySelectorAll('button[data-del]').forEach(b=>{
   if (!b.textContent.trim()) b.textContent = '削除';
 });
-
 
 </script>
 </body>
